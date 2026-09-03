@@ -5,17 +5,19 @@ system. The script requires the user to configure two environment variables.
 Requirements:
     tqdm
     pydantic
-    reqeuests
+    requests
     urllib3
 
 Environment:
     TECHCYTE_API_CLIENT_ID
     TECHCYTE_API_CLIENT_SECRET
-    TECHCYTE_API_HOST (optional, defaults to https://api.app.techcyte.com)
 
 Arguments:
     --image: the path to an image file (svs, tiff, etc)
     --geojson: the path to the annotation data
+    --barcode: barcode of the scan
+    --convert: (bool, optional) will trigger conversion to dicom upon upload
+    --host: (optional) override the default and env host variable
 """
 
 import argparse
@@ -33,7 +35,7 @@ from requests.sessions import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util import Retry
 
-HOST = os.getenv("TECHCYTE_API_HOST") or "https://api.app.techcyte.com"
+HOST: str = os.getenv("TECHCYTE_API_HOST") or "https://api.app.techcyte.com"
 
 
 class Object(BaseModel):
@@ -91,12 +93,12 @@ def example_object_json():
     return objects
 
 
-def get_token() -> str:
+def get_token(host: str) -> str:
     client_id = os.environ.get("TECHCYTE_API_CLIENT_ID")
     client_secret = os.environ.get("TECHCYTE_API_CLIENT_SECRET")
     response = requests.request(
         "POST",
-        urljoin(HOST, "api/v3/token"),
+        urljoin(host, "api/v3/token"),
         data={
             "grant_type": "client_credentials",
             "client_id": client_id,
@@ -113,7 +115,7 @@ def get_token() -> str:
     return response_json["access_token"]
 
 
-def get_current_user_id(token: str) -> str:
+def get_current_user_id(host: str, token: str) -> str:
     """the id of the user the token belongs to, used as the author of the annotations"""
     query = """query {
         me {
@@ -125,7 +127,7 @@ def get_current_user_id(token: str) -> str:
     """
     response = requests.request(
         "POST",
-        urljoin(HOST, "api/graphql"),
+        urljoin(host, "api/graphql"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -135,11 +137,11 @@ def get_current_user_id(token: str) -> str:
     return response.json()["data"]["me"]["user"]["decodedId"]
 
 
-def create_sample(token: str, sample_data: dict) -> dict:
+def create_sample(host: str, token: str, sample_data: dict) -> dict:
     """we should set the label and barcode of the sample to be the name of the file"""
     response = requests.request(
         "POST",
-        urljoin(HOST, "api/v3/samples"),
+        urljoin(host, "api/v3/samples"),
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -151,11 +153,13 @@ def create_sample(token: str, sample_data: dict) -> dict:
     return response.json()
 
 
-def create_region(token: str, sample_id: str | int, region_data: dict) -> dict:
+def create_region(
+    host: str, token: str, sample_id: str | int, region_data: dict
+) -> dict:
     """we should set the original filename on the region"""
     response = requests.request(
         "POST",
-        urljoin(HOST, f"api/v3/samples/{sample_id}/regions"),
+        urljoin(host, f"api/v3/samples/{sample_id}/regions"),
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -243,7 +247,7 @@ def load_annotations_from_json(
     return techcyte_objects
 
 
-def create_objects(token: str, objects: list[Object]):
+def create_objects(host: str, token: str, objects: list[Object]):
     """gql endpoint to create the objects
 
     WARNING: this endpoint only lets you create 512 objects at a time, if you need more you'll need
@@ -264,7 +268,7 @@ def create_objects(token: str, objects: list[Object]):
     variables = {"objects": [obj.model_dump() for obj in objects]}
     response = requests.request(
         "POST",
-        urljoin(HOST, "api/graphql"),
+        urljoin(host, "api/graphql"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -274,10 +278,10 @@ def create_objects(token: str, objects: list[Object]):
     return response.json()
 
 
-def start_region_upload(token: str, region_id: str | int) -> dict:
+def start_region_upload(host: str, token: str, region_id: str | int) -> dict:
     response = requests.request(
         "POST",
-        urljoin(HOST, f"api/v3/regions/{region_id}/uploads"),
+        urljoin(host, f"api/v3/regions/{region_id}/uploads"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -286,10 +290,12 @@ def start_region_upload(token: str, region_id: str | int) -> dict:
     return response.json()
 
 
-def finish_region_upload(token: str, upload_id: str | int, etags) -> requests.Response:
+def finish_region_upload(
+    host: str, token: str, upload_id: str | int, etags
+) -> requests.Response:
     response = requests.request(
         "POST",
-        urljoin(HOST, f"api/v3/uploads/{upload_id}/done"),
+        urljoin(host, f"api/v3/uploads/{upload_id}/done"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -299,10 +305,10 @@ def finish_region_upload(token: str, upload_id: str | int, etags) -> requests.Re
     return response
 
 
-def mark_region_uploaded(token: str, region_id: str | int):
+def mark_region_uploaded(host: str, token: str, region_id: str | int):
     response = requests.request(
         "POST",
-        urljoin(HOST, f"api/v3/regions/{region_id}/done"),
+        urljoin(host, f"api/v3/regions/{region_id}/done"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -311,10 +317,10 @@ def mark_region_uploaded(token: str, region_id: str | int):
     return response
 
 
-def mark_sample_uploaded(token: str, sample_id: str | int):
+def mark_sample_uploaded(host: str, token: str, sample_id: str | int):
     response = requests.request(
         "PATCH",
-        urljoin(HOST, f"api/v3/samples/{sample_id}"),
+        urljoin(host, f"api/v3/samples/{sample_id}"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -324,10 +330,12 @@ def mark_sample_uploaded(token: str, sample_id: str | int):
     return response
 
 
-def get_part_upload_url(token: str, upload_id: int | str, part_index: int) -> str:
+def get_part_upload_url(
+    host: str, token: str, upload_id: int | str, part_index: int
+) -> str:
     response = requests.request(
         "GET",
-        urljoin(HOST, f"api/v3/uploads/{upload_id}/parts/{part_index+1}"),
+        urljoin(host, f"api/v3/uploads/{upload_id}/parts/{part_index+1}"),
         headers={
             "Authorization": f"Bearer {token}",
         },
@@ -337,6 +345,7 @@ def get_part_upload_url(token: str, upload_id: int | str, part_index: int) -> st
 
 
 async def upload_part(
+    host: str,
     session: requests.Session,
     token,
     upload_id: str,
@@ -344,7 +353,7 @@ async def upload_part(
     blob: bytes,
     pbar: tqdm,
 ) -> str:
-    url = get_part_upload_url(token, upload_id, part_index)
+    url = get_part_upload_url(host, token, upload_id, part_index)
     response = session.request(
         "PUT",
         url,
@@ -355,8 +364,8 @@ async def upload_part(
     return response.headers["ETag"]
 
 
-async def upload_file(token, filepath, region_id) -> None:
-    upload = start_region_upload(token, region_id)
+async def upload_file(host: str, token: str, filepath: str, region_id: str) -> None:
+    upload = start_region_upload(host, token, region_id)
 
     file_bytes = os.path.getsize(filepath)
     part_size = 10_000_000  # 5MB is the min size
@@ -375,15 +384,21 @@ async def upload_file(token, filepath, region_id) -> None:
                 for part in range(total_parts):
                     task = tg.create_task(
                         upload_part(
-                            session, token, upload["id"], part, fp.read(part_size), pbar
+                            host,
+                            session,
+                            token,
+                            upload["id"],
+                            part,
+                            fp.read(part_size),
+                            pbar,
                         )
                     )
                     tasks.append(task)
-    finish_region_upload(token, upload["id"], [task.result() for task in tasks])
+    finish_region_upload(host, token, upload["id"], [task.result() for task in tasks])
 
 
 def main(args):
-    access_token = get_token()
+    access_token = get_token(args.host)
 
     image_filepath = Path(args.image)
     sample_data = {
@@ -391,7 +406,7 @@ def main(args):
         "barcode": args.barcode,
     }
 
-    sample = create_sample(access_token, sample_data)
+    sample = create_sample(args.host, access_token, sample_data)
     print("created sample", sample["id"])
 
     region_data = {
@@ -400,20 +415,22 @@ def main(args):
     if args.convert:
         region_data["mimetype"] = "image/tiff+convert"
 
-    region = create_region(access_token, sample["id"], region_data)
+    region = create_region(args.host, access_token, sample["id"], region_data)
     print("created region", region["id"])
 
     # once the file is uploaded the region and the sample need to be marked us "uploaded"
-    asyncio.run(upload_file(access_token, image_filepath.as_posix(), region["id"]))
-    mark_region_uploaded(access_token, region["id"])
-    mark_sample_uploaded(access_token, sample["id"])
+    asyncio.run(
+        upload_file(args.host, access_token, image_filepath.as_posix(), region["id"])
+    )
+    mark_region_uploaded(args.host, access_token, region["id"])
+    mark_sample_uploaded(args.host, access_token, sample["id"])
 
     # load the objects from the json file and convert them to the techcyte format
-    author_id = get_current_user_id(access_token)
+    author_id = get_current_user_id(args.host, access_token)
     objects = load_annotations_from_json(args.geojson, region["id"], author_id)
 
     # create the objects
-    response_json = create_objects(access_token, objects)
+    response_json = create_objects(args.host, access_token, objects)
     print(
         f"created {len(response_json['data']['create_objects']['objects'])} objects for sample {sample['id']}"
     )
@@ -430,6 +447,7 @@ if __name__ == "__main__":
         type=bool,
         default=False,
         help="convert the file to dicom upon upload",
+        action=argparse.BooleanOptionalAction,
     )
     args = parser.parse_args()
     main(args)
