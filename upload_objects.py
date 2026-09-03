@@ -17,7 +17,7 @@ Arguments:
     --geojson: the path to the annotation data
     --barcode: barcode of the scan
     --convert: (bool, optional) will trigger conversion to dicom upon upload
-    --host: (optional) override the default and env host variable
+    --host: (optional) defaults to https://api.app.techcyte.com, override if you want to upload to ci or staging
 """
 
 import argparse
