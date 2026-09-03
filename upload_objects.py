@@ -114,7 +114,7 @@ def get_token() -> str:
 
 
 def get_current_user_id(token: str) -> str:
-    """the id of the user the token belongs to, used as the author of the annotations  """
+    """the id of the user the token belongs to, used as the author of the annotations"""
     query = """query {
         me {
             user {
@@ -237,7 +237,9 @@ def load_annotations_from_json(
     with open(filename, "r") as fp:
         raw_objects = json.load(fp)
 
-    techcyte_objects = convert_raw_objects_to_techcyte(raw_objects, region_id, author_id)
+    techcyte_objects = convert_raw_objects_to_techcyte(
+        raw_objects, region_id, author_id
+    )
     return techcyte_objects
 
 
@@ -386,7 +388,7 @@ def main(args):
     image_filepath = Path(args.image)
     sample_data = {
         "label": image_filepath.name,
-        "barcode": image_filepath.name,
+        "barcode": args.barcode,
     }
 
     sample = create_sample(access_token, sample_data)
@@ -395,6 +397,9 @@ def main(args):
     region_data = {
         "original_filename": image_filepath.name,
     }
+    if args.convert:
+        region_data["mimetype"] = "image/tiff+convert"
+
     region = create_region(access_token, sample["id"], region_data)
     print("created region", region["id"])
 
@@ -419,5 +424,12 @@ if __name__ == "__main__":
     parser.add_argument("--image", help="file path to image file", required=True)
     parser.add_argument("--geojson", help="file path to geojson file", required=True)
     parser.add_argument("--host", default="https://api.app.techcyte.com")
+    parser.add_argument("--barcode", required=True)
+    parser.add_argument(
+        "--convert",
+        type=bool,
+        default=False,
+        help="convert the file to dicom upon upload",
+    )
     args = parser.parse_args()
     main(args)
