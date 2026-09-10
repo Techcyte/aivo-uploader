@@ -31,11 +31,9 @@ from urllib.parse import urljoin
 
 import requests
 from pydantic import BaseModel, ConfigDict
-from requests.sessions import HTTPAdapter
+from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util import Retry
-
-HOST: str = os.getenv("TECHCYTE_API_HOST") or "https://api.app.techcyte.com"
 
 
 class Object(BaseModel):
