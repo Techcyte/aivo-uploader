@@ -403,6 +403,8 @@ def main(args):
         "label": image_filepath.name,
         "barcode": args.barcode,
     }
+    if args.tag:
+        sample_data["tags"] = [args.tag]
 
     sample = create_sample(args.host, access_token, sample_data)
     print("created sample", sample["id"])
@@ -440,6 +442,7 @@ if __name__ == "__main__":
     parser.add_argument("--geojson", help="file path to geojson file", required=True)
     parser.add_argument("--host", default="https://api.app.techcyte.com")
     parser.add_argument("--barcode", required=True)
+    parser.add_argument("--tag", help="tags to add to scan metadata", default="")
     parser.add_argument(
         "--convert",
         type=bool,
