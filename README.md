@@ -11,6 +11,7 @@ A command-line tool to upload Whole Slide Images (WSI) and associated annotation
 - [Usage](#usage)
 - [Annotations & QuPath Compatibility](#annotations-&-qupath-compatibility)
 - [Upload Lifecycle](#upload-lifecycle)
+- [Downloading Scans for Tasks](#downloading-scans-for-tasks)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview & Techcyte Concepts
@@ -31,7 +32,7 @@ Sample (Slide Container)
 
 - **Python**: 3.13+
 - **[uv](https://github.com/astral-sh/uv)** package manager
-- **Techcyte API Credentials**: A `client_id` and `client_secret` with permissions to create samples, regions, and objects.
+- **Techcyte API Credentials**: A `client_id` and `client_secret` with permissions to create samples, regions, and objects (uploading), or to read cases, tasks, and scans and edit tasks (downloading).
 
 ## Installation
 
@@ -45,14 +46,14 @@ uv sync
 
 ## Authentication & Environment Setup
 
-Set your Techcyte API credentials as environment variables before running the script:
+Both scripts read your Techcyte API credentials from environment variables. Set them before running either one:
 
 ```bash
 export TECHCYTE_API_CLIENT_ID="your-client-id-here"
 export TECHCYTE_API_CLIENT_SECRET="your-client-secret-here"
 ```
 
-By default, the script connects to production (`https://api.app.techcyte.com`). To target a staging or CI environment, pass `--host`.
+By default, both scripts connect to production (`https://api.app.techcyte.com`). To target a staging or CI environment, pass `--host`.
 
 ## Usage
 
@@ -113,8 +114,58 @@ When executed, `upload_objects.py` runs through the following sequence:
 7. Convert GeoJSON & Post Objects (GraphQL create_objects)
 ```
 
+## Downloading Scans for Tasks
+
+`download_scans.py` finds every **not started** task of a given task type in a company, downloads the scans attached to each one, and moves the task through its lifecycle as it goes. Like the uploader, it reads credentials from `TECHCYTE_API_CLIENT_ID` and `TECHCYTE_API_CLIENT_SECRET` (see [Authentication & Environment Setup](#authentication-&-environment-setup)).
+
+```bash
+uv run download_scans.py \
+    --company-id 1234 \
+    --task-type-id 56 \
+    --dest ./scans \
+    --dry-run
+```
+
+Drop `--dry-run` to download. A dry run lists the matching tasks, their scans, and how much data they hold, without downloading anything or changing any task.
+
+| Argument | Type | Required? | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `--task-type-id` | `str` | **Yes** | — | Task (request) type to look for: the ID from **Configuration → Request types** (`321083`), or its encoded GraphQL ID. See [Finding the task type ID](#finding-the-task-type-id). |
+| `--dest` | `path` | **Yes** | — | Directory to download into. |
+| `--company-id` | `str` | No | API client's company | Company to search. A different company requires the client to be allowed to impersonate it. |
+| `--host` | `str` | No | `https://api.app.techcyte.com` | Techcyte API base URL. |
+| `--overwrite` / `--no-overwrite` | `bool` | No | `False` | Re-download files already on disk. |
+| `--dry-run` / `--no-dry-run` | `bool` | No | `False` | List tasks, scans, and sizes only. |
+| `--workers` | `int` | No | `4` | Number of scans to download at once. |
+
+Files land in `<dest>/<case_number>/<task_id>/<scan_id>/`. DICOM scans are saved as a `.zip`.
+
+### Finding the task type ID
+
+Task types are called **request types** in the Techcyte app. To find the ID to pass as `--task-type-id`:
+
+1. Open **Configuration** from the navigation menu.
+2. Select the **Request types** tab.
+3. Copy the number in the **ID** column for the request type you want (e.g. `321083`).
+
+### Task Lifecycle
+
+```
+1. Find NOT_STARTED tasks of the task type (and size their scans)
+   │
+2. Download scans --workers at a time, each with its own progress bar
+   (a task is marked IN_PROGRESS when its first scan starts)
+   │
+3. When a task's last scan finishes:
+   All its scans succeeded → complete the task
+   Any scan failed         → reset the task to NOT_STARTED for the next run
+```
+
+Finished files are remembered, so rerunning after a failure only downloads what's missing. Pressing Ctrl-C stops the downloads in progress and resets every task it had claimed to NOT_STARTED. Run one copy at a time: two concurrent runs can claim the same task.
+
 ## Troubleshooting
 
+- **`403 Forbidden` from `download_scans.py`**: The API client needs permission to read cases, tasks, and scans and to edit tasks in the target company (and to impersonate it, if `--company-id` isn't its own).
 - **`401 Unauthorized`**: Verify `TECHCYTE_API_CLIENT_ID` and `TECHCYTE_API_CLIENT_SECRET` are set and valid for the target `--host`.
 - **`KeyError: 'access_token'`**: Check credentials and host URL.
 - **`asyncio.TaskGroup` error**: Ensure you are running Python 3.11+ (Python 3.13 recommended).
