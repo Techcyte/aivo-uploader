@@ -17,6 +17,7 @@ Arguments:
     --dest: the directory to download scans into, as <dest>/<case_number>/<task_id>/<scan_id>/
     --company-id: (optional) company to search, defaults to the API client's own company
     --overwrite: (bool, optional) re-download files that are already on disk
+    --dicom-annotations: (bool, optional) include the scan's annotations in each DICOM zip
     --dry-run: (bool, optional) list matching tasks, scans and sizes without downloading
     --workers: (optional) number of scans to download at once, defaults to 4
     --host: (optional) defaults to https://api.app.techcyte.com, override if you want to download from ci or staging
@@ -28,7 +29,8 @@ How it works:
        of the task type, and list each matching scan's regions (and their sizes) up front.
     3. Download scans --workers at a time, each with its own progress bar. A task is
        marked IN_PROGRESS (editTask) when its first scan starts; each region streams
-       from GET /api/v3/regions/{region_id}/contents (DICOM arrives as a zip). When a
+       from GET /api/v3/regions/{region_id}/contents (DICOM arrives as a zip, with
+       dicom/techcyte_annotations.dcm added when --dicom-annotations is set). When a
        task's last scan finishes, it is completed (completeTask), or reset to
        NOT_STARTED if any of its scans failed.
 """
@@ -552,10 +554,14 @@ def download_region(
         say(f"  region {region_id} already downloaded; skipping")
         return 0
 
+    params = {}
+    if run.args.dicom_annotations and region.get("mimetype") == "application/dicom":
+        params["dicom_annotations"] = "true"
+
     expected = int(region.get("file_size") or 0)
     received = 0
     with run.session.request(
-        "GET", f"api/v3/regions/{region_id}/contents", stream=True
+        "GET", f"api/v3/regions/{region_id}/contents", params=params, stream=True
     ) as resp:
         out_path = dest_dir / filename_from_response(resp, fallback)
         tmp_path = out_path.with_name(out_path.name + ".part")
@@ -736,6 +742,13 @@ if __name__ == "__main__":
         type=bool,
         default=False,
         help="re-download files that are already on disk",
+        action=argparse.BooleanOptionalAction,
+    )
+    parser.add_argument(
+        "--dicom-annotations",
+        type=bool,
+        default=False,
+        help="include the scan's annotations in each DICOM zip as dicom/techcyte_annotations.dcm",
         action=argparse.BooleanOptionalAction,
     )
     parser.add_argument(

@@ -135,10 +135,21 @@ Drop `--dry-run` to download. A dry run lists the matching tasks, their scans, a
 | `--company-id` | `str` | No | API client's company | Company to search. A different company requires the client to be allowed to impersonate it. |
 | `--host` | `str` | No | `https://api.app.techcyte.com` | Techcyte API base URL. |
 | `--overwrite` / `--no-overwrite` | `bool` | No | `False` | Re-download files already on disk. |
+| `--dicom-annotations` / `--no-dicom-annotations` | `bool` | No | `False` | Include the scan's annotations in each DICOM zip. See [DICOM annotations](#dicom-annotations). |
 | `--dry-run` / `--no-dry-run` | `bool` | No | `False` | List tasks, scans, and sizes only. |
 | `--workers` | `int` | No | `4` | Number of scans to download at once. |
 
 Files land in `<dest>/<case_number>/<task_id>/<scan_id>/`. DICOM scans are saved as a `.zip`.
+
+### DICOM annotations
+
+With `--dicom-annotations`, each DICOM scan's zip also contains `dicom/techcyte_annotations.dcm`, a DICOM file holding the scan's annotations. Things to know:
+
+- It only applies to DICOM scans. Other scans download as usual.
+- A scan with no annotations gets no annotations file.
+- Scans that haven't been processed yet download as their original DICOM, without annotations.
+- If the server can't export a scan's annotations, that scan fails and its task is reset to NOT_STARTED.
+- Scans already on disk are skipped, so to add annotations to them, rerun with `--overwrite` as well.
 
 ### Finding the task type ID
 
